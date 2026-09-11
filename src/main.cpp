@@ -5,13 +5,13 @@
 #include <atomic>
 #include <cstdint>
 #include <cstring>
-#include <mutex>
 
-#include <detours.h>
 #include <nvsdk_ngx.h>
 #include <ffx_api.h>
 #include <ffx_api_types.h>
 #include <ffx_upscale.h>
+#include "detours_mingw_compat.h"
+#include <detours.h>
 
 namespace {
 using NgxInit = NVSDK_NGX_Result (NVSDK_CONV*)(unsigned long long, const wchar_t*, ID3D12Device*, const NVSDK_NGX_FeatureCommonInfo*, NVSDK_NGX_Version);
@@ -27,9 +27,20 @@ FfxDestroy ffxDestroy = nullptr;
 FfxDispatch ffxDispatch = nullptr;
 HMODULE fidelityFx = nullptr;
 ffxContext upscaleContext{};
-std::mutex stateMutex;
+SRWLOCK stateLock = SRWLOCK_INIT;
 std::atomic_bool hooksInstalled{false};
 std::atomic_bool contextReady{false};
+
+class ScopedExclusiveLock {
+public:
+    explicit ScopedExclusiveLock(SRWLOCK& lock) : lock_(lock) { AcquireSRWLockExclusive(&lock_); }
+    ~ScopedExclusiveLock() { ReleaseSRWLockExclusive(&lock_); }
+    ScopedExclusiveLock(const ScopedExclusiveLock&) = delete;
+    ScopedExclusiveLock& operator=(const ScopedExclusiveLock&) = delete;
+
+private:
+    SRWLOCK& lock_;
+};
 
 FfxApiResource resource(ID3D12Resource* value) {
     FfxApiResource result{};
@@ -43,7 +54,7 @@ bool getParameter(const NVSDK_NGX_Parameter* parameters, const char* name, T* ou
 }
 
 bool loadFidelityFx() {
-    std::lock_guard<std::mutex> lock(stateMutex);
+    ScopedExclusiveLock lock(stateLock);
     if (fidelityFx) return true;
     fidelityFx = LoadLibraryW(L"amd_fidelityfx_upscaler_dx12.dll");
     if (!fidelityFx) fidelityFx = LoadLibraryW(L"amd_fidelityfx_dx12.dll");
@@ -64,7 +75,7 @@ bool ensureContext(const NVSDK_NGX_Parameter* parameters) {
     if (!outputHeight) outputHeight = renderHeight;
     if (!loadFidelityFx()) return false;
 
-    std::lock_guard<std::mutex> lock(stateMutex);
+    ScopedExclusiveLock lock(stateLock);
     if (contextReady.load()) return true;
     ffxCreateContextDescUpscale description{};
     description.header.type = FFX_API_CREATE_CONTEXT_DESC_TYPE_UPSCALE;
@@ -113,8 +124,8 @@ void hookNgx(HMODULE module) {
     realEvaluate = reinterpret_cast<NgxEvaluate>(GetProcAddress(module, "NVSDK_NGX_D3D12_EvaluateFeature"));
     if (!realInit || !realEvaluate) { hooksInstalled.store(false); return; }
     DetourTransactionBegin(); DetourUpdateThread(GetCurrentThread());
-    DetourAttach(reinterpret_cast<PVOID*>(&realInit), hookedInit);
-    DetourAttach(reinterpret_cast<PVOID*>(&realEvaluate), hookedEvaluate);
+    DetourAttach(reinterpret_cast<PVOID*>(&realInit), reinterpret_cast<PVOID>(hookedInit));
+    DetourAttach(reinterpret_cast<PVOID*>(&realEvaluate), reinterpret_cast<PVOID>(hookedEvaluate));
     if (DetourTransactionCommit() != NO_ERROR) hooksInstalled.store(false);
 }
 

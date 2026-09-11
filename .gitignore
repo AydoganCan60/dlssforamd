@@ -1,0 +1,7 @@
+# Copyright (c) 2026 AydoganCan60- MIT License
+/build/
+/build-*/
+/external/
+*.dll
+*.a
+*.o

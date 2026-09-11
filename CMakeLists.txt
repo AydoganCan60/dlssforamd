@@ -26,11 +26,13 @@ endforeach()
 add_library(detours STATIC
     "${DETOURS_ROOT}/src/detours.cpp"
     "${DETOURS_ROOT}/src/disasm.cpp"
-    "${DETOURS_ROOT}/src/image.cpp"
-    "${DETOURS_ROOT}/src/modules.cpp"
+    src/detours_mingw_modules.cpp
 )
 target_include_directories(detours PUBLIC "${DETOURS_ROOT}/src")
 target_compile_definitions(detours PRIVATE WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0601)
+if(MINGW)
+    target_compile_options(detours PRIVATE -include "${CMAKE_SOURCE_DIR}/src/detours_mingw_compat.h")
+endif()
 
 add_library(version SHARED src/main.cpp src/version_proxy.cpp)
 set_target_properties(version PROPERTIES PREFIX "" OUTPUT_NAME "version")
@@ -41,6 +43,11 @@ target_include_directories(version PRIVATE
 )
 target_compile_definitions(version PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0601)
 target_compile_options(version PRIVATE -Wall -Wextra -Wpedantic)
-target_link_libraries(version PRIVATE detours d3d12 dxgi)
+if(MINGW)
+    target_link_options(version PRIVATE -static)
+    target_link_libraries(version PRIVATE detours d3d12 dxgi winpthread)
+else()
+    target_link_libraries(version PRIVATE detours d3d12 dxgi)
+endif()
 
 install(TARGETS version RUNTIME DESTINATION . LIBRARY DESTINATION .)
