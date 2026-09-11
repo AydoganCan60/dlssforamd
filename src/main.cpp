@@ -7,6 +7,7 @@
 #include <cstring>
 
 #include <nvsdk_ngx.h>
+#include <sl_core_types.h>
 #include <ffx_api.h>
 #include <ffx_api_types.h>
 #include <ffx_upscale.h>
@@ -32,7 +33,7 @@ using NgxShutdown = NVSDK_NGX_Result (NVSDK_CONV*)(ID3D12Device*);
 using LoadLibraryAFunction = HMODULE (WINAPI*)(LPCSTR);
 using LoadLibraryWFunction = HMODULE (WINAPI*)(LPCWSTR);
 using GetProcAddressFunction = FARPROC (WINAPI*)(HMODULE, LPCSTR);
-using SlIsFeatureSupported = std::int32_t (WINAPI*)(std::uint32_t, const void*);
+using SlInit = sl::Result (*)(const sl::Preferences&, std::uint64_t);
 using FfxCreate = ffxReturnCode_t (*)(ffxContext*, ffxCreateContextDescHeader*, const ffxAllocationCallbacks*);
 using FfxDestroy = ffxReturnCode_t (*)(ffxContext*, const ffxAllocationCallbacks*);
 using FfxDispatch = ffxReturnCode_t (*)(ffxContext*, const ffxDispatchDescHeader*);
@@ -47,7 +48,7 @@ NgxShutdown realShutdown = nullptr;
 LoadLibraryAFunction realLoadLibraryA = LoadLibraryA;
 LoadLibraryWFunction realLoadLibraryW = LoadLibraryW;
 GetProcAddressFunction realGetProcAddress = GetProcAddress;
-SlIsFeatureSupported realSlIsFeatureSupported = nullptr;
+SlInit realSlInit = nullptr;
 FfxCreate ffxCreate = nullptr;
 FfxDestroy ffxDestroy = nullptr;
 FfxDispatch ffxDispatch = nullptr;
@@ -276,14 +277,27 @@ bool requestedLoaderDiscovery() {
     return GetEnvironmentVariableA("DLSS_FOR_AMD_DISCOVERY", setting, sizeof(setting)) == 1 && setting[0] == '1';
 }
 
-std::int32_t WINAPI observedSlIsFeatureSupported(std::uint32_t feature, const void* adapterInfo) {
-    constexpr std::uint32_t streamlineFeatureDlss = 0;
-    if (feature == streamlineFeatureDlss && requestedStreamlineSpoof()) {
-        logging::write("slIsFeatureSupported feature=%u adapterInfo=%p result=0 override=1", feature, adapterInfo);
-        return 0;
+sl::Result hookedSlInit(const sl::Preferences& preferences, std::uint64_t sdkVersion) {
+    if (!realSlInit) return sl::Result::eErrorNotInitialized;
+    sl::Feature features[64]{};
+    std::uint32_t count = preferences.featuresToLoad ? (preferences.numFeaturesToLoad < 63 ? preferences.numFeaturesToLoad : 63) : 0;
+    bool hasDlss = false;
+    for (std::uint32_t index = 0; index < count; ++index) {
+        features[index] = preferences.featuresToLoad[index];
+        if (features[index] == sl::kFeatureDLSS) hasDlss = true;
     }
-    const std::int32_t result = realSlIsFeatureSupported ? realSlIsFeatureSupported(feature, adapterInfo) : 32;
-    logging::write("slIsFeatureSupported feature=%u adapterInfo=%p result=%d override=0", feature, adapterInfo, result);
+    if (!hasDlss) features[count++] = sl::kFeatureDLSS;
+    sl::Preferences modified = preferences;
+    modified.featuresToLoad = features;
+    modified.numFeaturesToLoad = count;
+    logging::write("slInit sdkVersion=%llu originalFeatures=%u injectedFeatures=%u dlssPresent=%u", sdkVersion,
+                   preferences.numFeaturesToLoad, count, hasDlss);
+    sl::Result result = realSlInit(modified, sdkVersion);
+    if (result != sl::Result::eOk) {
+        logging::write("slInit DLSS injection failed result=%d; retrying original preferences", static_cast<int>(result));
+        result = realSlInit(preferences, sdkVersion);
+    }
+    logging::write("slInit result=%d", static_cast<int>(result));
     return result;
 }
 
@@ -331,28 +345,29 @@ HMODULE WINAPI hookedLoadLibraryW(LPCWSTR path) {
 }
 
 FARPROC WINAPI hookedGetProcAddress(HMODULE module, LPCSTR name) {
-    if (name && requestedVirtualization()) {
-        FARPROC replacement = nullptr;
-        if (module == proxyModule) {
-            if (std::strcmp(name, "NVSDK_NGX_D3D12_Init") == 0) replacement = reinterpret_cast<FARPROC>(hookedInit);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_GetCapabilityParameters") == 0) replacement = reinterpret_cast<FARPROC>(hookedGetCapabilities);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_AllocateParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackAllocateParameters);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_DestroyParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackDestroyParameters);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_CreateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedCreate);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_EvaluateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedEvaluate);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_ReleaseFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedRelease);
-            else if (std::strcmp(name, "NVSDK_NGX_D3D12_Shutdown1") == 0) replacement = reinterpret_cast<FARPROC>(hookedShutdown);
-        }
-        if (requestedStreamlineSpoof() && std::strcmp(name, "slIsFeatureSupported") == 0) {
-            realSlIsFeatureSupported = reinterpret_cast<SlIsFeatureSupported>(realGetProcAddress(module, name));
-            if (realSlIsFeatureSupported) replacement = reinterpret_cast<FARPROC>(observedSlIsFeatureSupported);
-        }
-        if (replacement) {
-            logging::write("GetProcAddress module=%p name=%s replacement=%p", module, name, reinterpret_cast<void*>(replacement));
-            return replacement;
-        }
+    FARPROC original = realGetProcAddress(module, name);
+    if (!name) return original;
+    if (name[0] == 's' && name[1] == 'l') logging::write("Streamline export module=%p name=%s address=%p", module, name, reinterpret_cast<void*>(original));
+    FARPROC replacement = nullptr;
+    if (requestedVirtualization() && module == proxyModule) {
+        if (std::strcmp(name, "NVSDK_NGX_D3D12_Init") == 0) replacement = reinterpret_cast<FARPROC>(hookedInit);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_GetCapabilityParameters") == 0) replacement = reinterpret_cast<FARPROC>(hookedGetCapabilities);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_AllocateParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackAllocateParameters);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_DestroyParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackDestroyParameters);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_CreateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedCreate);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_EvaluateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedEvaluate);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_ReleaseFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedRelease);
+        else if (std::strcmp(name, "NVSDK_NGX_D3D12_Shutdown1") == 0) replacement = reinterpret_cast<FARPROC>(hookedShutdown);
     }
-    return realGetProcAddress(module, name);
+    if (requestedStreamlineSpoof() && std::strcmp(name, "slInit") == 0 && original) {
+        realSlInit = reinterpret_cast<SlInit>(original);
+        replacement = reinterpret_cast<FARPROC>(hookedSlInit);
+    }
+    if (replacement) {
+        logging::write("GetProcAddress module=%p name=%s replacement=%p", module, name, reinterpret_cast<void*>(replacement));
+        return replacement;
+    }
+    return original;
 }
 
 bool installLoaderHooks() {

@@ -12,12 +12,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(DETOURS_ROOT "${CMAKE_SOURCE_DIR}/external/Detours" CACHE PATH "Microsoft Detours 4.0.1 source directory")
 set(FIDELITYFX_SDK_DIR "${CMAKE_SOURCE_DIR}/external/FidelityFX-SDK" CACHE PATH "AMD FidelityFX SDK source directory")
 set(NGX_SDK_DIR "" CACHE PATH "NVIDIA NGX SDK directory containing include/nvsdk_ngx.h")
+set(STREAMLINE_SDK_DIR "${CMAKE_SOURCE_DIR}/external/Streamline" CACHE PATH "NVIDIA Streamline SDK directory")
 
 foreach(required_file
         "${DETOURS_ROOT}/src/detours.h"
         "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/api/include/ffx_api.h"
         "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/upscalers/include/ffx_upscale.h"
-        "${NGX_SDK_DIR}/include/nvsdk_ngx.h")
+        "${NGX_SDK_DIR}/include/nvsdk_ngx.h"
+        "${STREAMLINE_SDK_DIR}/include/sl_core_types.h")
     if(NOT EXISTS "${required_file}")
         message(FATAL_ERROR "Missing dependency file: ${required_file}. See README.md.")
     endif()
@@ -39,6 +41,7 @@ set_target_properties(version PROPERTIES PREFIX "" OUTPUT_NAME "version")
 target_include_directories(version PRIVATE
     "${CMAKE_SOURCE_DIR}/include"
     "${NGX_SDK_DIR}/include"
+    "${STREAMLINE_SDK_DIR}/include"
     "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/api/include"
     "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/upscalers/include"
 )

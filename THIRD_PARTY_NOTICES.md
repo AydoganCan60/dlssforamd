@@ -19,6 +19,10 @@ FidelityFX SDK source components are generally distributed under the MIT License
 
 Source and current license files: https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK
 
+## NVIDIA Streamline headers
+
+Copyright (c) 2022-2024 NVIDIA CORPORATION. Streamline's open-source headers are distributed under the MIT License. Source: https://github.com/NVIDIA-RTX/Streamline. Consult the upstream repository for terms applying to optional prebuilt plugins.
+
 ## ONNX Model Zoo Super Resolution (ESPCN)
 
 The preview weights and graph metadata in `models/` are derived from `onnxmodelzoo/super-resolution-10`, an ESPCN model distributed under the Apache License 2.0. Copyright belongs to the model's respective authors and contributors. A copy of the Apache License 2.0 is available at https://www.apache.org/licenses/LICENSE-2.0. The original model source is https://huggingface.co/onnxmodelzoo/super-resolution-10.

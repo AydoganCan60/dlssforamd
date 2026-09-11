@@ -15,11 +15,13 @@ Bu proje tamamlanmış, evrensel bir DLSS→FSR 3 çeviricisi değildir. NGX ABI
 - Microsoft Detours **4.0.1** (`external/Detours`)
 - AMD FidelityFX SDK (`external/FidelityFX-SDK`)
 - Lisanslı NVIDIA NGX SDK başlıkları (`-DNGX_SDK_DIR=/yol/NGX`)
+- Açık kaynak NVIDIA Streamline başlıkları (`external/Streamline`)
 - Çalışma anında FidelityFX SDK ile gelen `amd_fidelityfx_upscaler_dx12.dll` (eski SDK için `amd_fidelityfx_dx12.dll`)
 
 ```bash
 git clone --branch v4.0.1 https://github.com/microsoft/Detours.git external/Detours
 git clone https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git external/FidelityFX-SDK
+git clone --depth 1 https://github.com/NVIDIA-RTX/Streamline.git external/Streamline
 cmake -S . -B build -DCMAKE_SYSTEM_NAME=Windows \
   -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
   -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
@@ -39,7 +41,7 @@ Deneysel DirectCompute neural-engine yolunu etkinleştirmek için:
 DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
 ```
 
-`DLSS_FOR_AMD_DISCOVERY=1` açıkken proxy, erken `LoadLibraryA/W` ve `GetProcAddress` çağrılarını izler; eksik `nvngx.dll` ve `nvngx_dlss.dll` istekleri için kontrollü sanal modül/export katmanı sağlar. Streamline modülleri çok sayıda zorunlu export içerdiğinden sahte handle ile değiştirilmez. `slIsFeatureSupported` çağrıları yalnız gözlemlenir ve varsayılan olarak gerçek sonuca yönlendirilir. Riskli DLSS Streamline override deneyi ayrıca `DLSS_FOR_AMD_STREAMLINE_SPOOF=1` gerektirir ve yalnız feature 0'ı etkiler. Oyun bu isimleri hiç aramıyorsa menü görünürlüğü daha erken bir oyun/adapter kontrolü tarafından engellenmektedir.
+`DLSS_FOR_AMD_DISCOVERY=1` açıkken proxy, erken `LoadLibraryA/W` ve `GetProcAddress` çağrılarını izler; eksik `nvngx.dll` ve `nvngx_dlss.dll` istekleri için kontrollü sanal modül/export katmanı sağlar. Streamline modülleri sahte handle ile değiştirilmez. `DLSS_FOR_AMD_STREAMLINE_SPOOF=1`, `slIsFeatureSupported` fonksiyonuna dokunmadan resmi `slInit` Preferences listesinin bir kopyasına DLSS feature 0 ekler; modifiye init başarısız olursa otomatik olarak orijinal listeyle tekrar dener. Tüm dinamik `sl*` export istekleri loglanır. Oyun bu isimleri hiç aramıyorsa menü görünürlüğü daha erken bir oyun/adapter kontrolü tarafından engellenmektedir.
 
 `shaders/matrix_mul.hlsl` ile `models/espcn_x3.{weights,graph.json}` dosyalarını `version.dll` ile birlikte aynı dizin yapısında tutun. Motor shader'ı çalışma anında `d3dcompiler_47.dll` ile `cs_5_1` olarak derler ve ONNX Model Zoo ESPCN ağırlıklarını StructuredBuffer olarak yükler. `DLSS_FOR_AMD_TILE=8`, `16` (varsayılan) veya `32` ile compute tile seçilebilir. Sonuçlar `dlss_fsr_proxy.log` dosyasına yazılır. Preview çekirdeği graph düğümlerinin tamamını henüz yürütmez ve DLSS 5 ağını yeniden üretmez; açık weights/graph, WMMA kullanmayan tiled FP16/FP32 compute altyapısı ve G-buffer bağlantısını doğrular.
 
@@ -69,7 +71,7 @@ Experimental DirectCompute path:
 DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
 ```
 
-With `DLSS_FOR_AMD_DISCOVERY=1`, the proxy observes early `LoadLibraryA/W` and `GetProcAddress` calls and provides a controlled virtual module/export layer for missing `nvngx.dll` and `nvngx_dlss.dll` requests. Streamline modules require many exports and are never replaced with a fake handle. `slIsFeatureSupported` calls are observed and forwarded by default. The risky DLSS-only experiment additionally requires `DLSS_FOR_AMD_STREAMLINE_SPOOF=1` and overrides feature 0 only. If the game never requests these names, an earlier game/adapter check is still suppressing the menu path.
+With `DLSS_FOR_AMD_DISCOVERY=1`, the proxy observes early `LoadLibraryA/W` and `GetProcAddress` calls and provides a controlled virtual module/export layer for missing `nvngx.dll` and `nvngx_dlss.dll` requests. Streamline modules are never replaced with a fake handle. `DLSS_FOR_AMD_STREAMLINE_SPOOF=1` leaves `slIsFeatureSupported` untouched and appends DLSS feature 0 to a copy of the official `slInit` Preferences list; a failed modified init is automatically retried with the original list. All dynamic `sl*` export requests are logged. If the game never requests these names, an earlier game/adapter check is still suppressing the menu path.
 
 Keep `shaders/matrix_mul.hlsl` and `models/espcn_x3.{weights,graph.json}` beside the DLL using the same directory layout. The shader is compiled at runtime through `d3dcompiler_47.dll` as `cs_5_1`, and ONNX Model Zoo ESPCN weights are loaded as a StructuredBuffer. Select `DLSS_FOR_AMD_TILE=8`, `16` (default), or `32`. Status is written to `dlss_fsr_proxy.log`. The preview does not execute every graph node or reproduce the proprietary DLSS 5 network; it validates open weights/graph transport, a non-WMMA tiled FP16/FP32 compute foundation, and G-buffer binding.
 
