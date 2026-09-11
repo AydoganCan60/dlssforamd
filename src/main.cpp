@@ -271,6 +271,11 @@ bool requestedStreamlineSpoof() {
     return GetEnvironmentVariableA("DLSS_FOR_AMD_STREAMLINE_SPOOF", setting, sizeof(setting)) == 1 && setting[0] == '1';
 }
 
+bool requestedLoaderDiscovery() {
+    char setting[2]{};
+    return GetEnvironmentVariableA("DLSS_FOR_AMD_DISCOVERY", setting, sizeof(setting)) == 1 && setting[0] == '1';
+}
+
 std::int32_t WINAPI observedSlIsFeatureSupported(std::uint32_t feature, const void* adapterInfo) {
     constexpr std::uint32_t streamlineFeatureDlss = 0;
     if (feature == streamlineFeatureDlss && requestedStreamlineSpoof()) {
@@ -338,7 +343,7 @@ FARPROC WINAPI hookedGetProcAddress(HMODULE module, LPCSTR name) {
             else if (std::strcmp(name, "NVSDK_NGX_D3D12_ReleaseFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedRelease);
             else if (std::strcmp(name, "NVSDK_NGX_D3D12_Shutdown1") == 0) replacement = reinterpret_cast<FARPROC>(hookedShutdown);
         }
-        if (std::strcmp(name, "slIsFeatureSupported") == 0) {
+        if (requestedStreamlineSpoof() && std::strcmp(name, "slIsFeatureSupported") == 0) {
             realSlIsFeatureSupported = reinterpret_cast<SlIsFeatureSupported>(realGetProcAddress(module, name));
             if (realSlIsFeatureSupported) replacement = reinterpret_cast<FARPROC>(observedSlIsFeatureSupported);
         }
@@ -390,8 +395,11 @@ void hookNgx(HMODULE module) {
 }
 
 DWORD WINAPI initialize(LPVOID) {
-    installLoaderHooks();
-    logging::write("NGX discovery started virtualization=%u", requestedVirtualization());
+    const bool loaderDiscovery = requestedLoaderDiscovery() || requestedStreamlineSpoof();
+    if (loaderDiscovery) installLoaderHooks();
+    else logging::write("loader hooks disabled; set DLSS_FOR_AMD_DISCOVERY=1 for module interception");
+    logging::write("NGX discovery started virtualization=%u loaderDiscovery=%u streamlineSpoof=%u", requestedVirtualization(),
+                   loaderDiscovery, requestedStreamlineSpoof());
     for (unsigned int attempt = 0; attempt < 600 && !hooksInstalled.load(); ++attempt) {
         HMODULE ngx = GetModuleHandleW(L"nvngx.dll");
         if (!ngx) ngx = GetModuleHandleW(L"nvngx_dlss.dll");
