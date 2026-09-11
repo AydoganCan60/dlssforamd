@@ -7,7 +7,7 @@
 
 ### Önemli durum
 
-Bu proje tamamlanmış, evrensel bir DLSS→FSR 3 çeviricisi değildir. NGX ABI'si oyun ve SDK sürümüne göre değişebilir. DLSS Frame Generation, capability-parameter emülasyonu, feature create/release, kaynak durum geçişleri, descriptor yönetimi, UI ayrıştırma ve optik akış henüz uygulanmamıştır. Kod yalnızca NGX'in zaten oluşturabildiği bir feature'ın `EvaluateFeature` yolunu deneysel olarak yönlendirir; AMD kartında tam destek spoofing için ek NGX uyumluluk katmanı gerekir. Hatalı kaynak formatı/durumu GPU resetine neden olabilir.
+Bu proje tamamlanmış, evrensel bir DLSS→FSR 3 çeviricisi değildir. NGX ABI'si oyun ve SDK sürümüne göre değişebilir. D3D12 DLSS capability, sentetik feature create/release ve evaluate yönlendirmesi deneyseldir. DLSS Frame Generation, tam parametre emülasyonu, kaynak durum geçişleri, descriptor yönetimi, UI ayrıştırma ve optik akış henüz uygulanmamıştır. Frame Generation bu nedenle destekleniyor olarak bildirilmez. Hatalı kaynak formatı/durumu GPU resetine neden olabilir. Çalışma zamanı olayları oyun dizinindeki `dlss_fsr_proxy.log` dosyasına yazılır.
 
 ### Bağımlılıklar
 
@@ -41,7 +41,7 @@ Proton logları ve oyun yedekleriyle test edin. Anti-cheat kullanan çevrimiçi 
 
 ### Important status
 
-This is not a finished universal DLSS-to-FSR 3 translator. NGX ABIs vary across game/SDK versions. DLSS Frame Generation, capability-parameter emulation, feature create/release, resource transitions, descriptor management, UI separation, and optical flow are not implemented. The current code only experiments with redirecting `EvaluateFeature` for a feature NGX was already able to create; full support spoofing on AMD hardware requires an additional NGX compatibility layer. Incorrect resource formats/states can trigger a GPU reset.
+This is not a finished universal DLSS-to-FSR 3 translator. NGX ABIs vary across game/SDK versions. D3D12 DLSS capability overrides, synthetic feature create/release, and evaluate redirection are experimental. DLSS Frame Generation, full parameter emulation, resource transitions, descriptor management, UI separation, and optical flow are not implemented, so Frame Generation is not advertised as supported. Incorrect resource formats/states can trigger a GPU reset. Runtime events are written to `dlss_fsr_proxy.log` beside the game executable.
 
 ### Dependencies and build
 
