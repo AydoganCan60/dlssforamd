@@ -28,11 +28,15 @@ public:
     bool ready() const { return pipelineState_ != nullptr; }
 
 private:
+    bool loadWeights(HMODULE proxyModule);
     void release();
 
     ID3D12Device* device_ = nullptr;
     ID3D12RootSignature* rootSignature_ = nullptr;
     ID3D12PipelineState* pipelineState_ = nullptr;
     ID3D12DescriptorHeap* descriptorHeap_ = nullptr;
+    ID3D12Resource* weights_ = nullptr;
     UINT descriptorSize_ = 0;
+    UINT weightCount_ = 0;
+    UINT tileSize_ = 16;
 };

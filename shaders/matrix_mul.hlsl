@@ -1,9 +1,12 @@
 // Copyright (c) 2026 AydoganCan60- MIT License
-#define TILE_SIZE 8
+#ifndef TILE_SIZE
+#define TILE_SIZE 16
+#endif
 
 Texture2D<float4> InputColor : register(t0);
 Texture2D<float> InputDepth : register(t1);
 Texture2D<float2> InputMotion : register(t2);
+StructuredBuffer<float> ModelWeights : register(t3);
 RWTexture2D<float4> OutputColor : register(u0);
 
 cbuffer DispatchConstants : register(b0) {
@@ -32,7 +35,8 @@ void main(uint3 dispatchId : SV_DispatchThreadID, uint3 groupId : SV_GroupID, ui
     min16float fp16Accumulation = min16float(0.0);
     [unroll]
     for (uint k = 0; k < TILE_SIZE; ++k) {
-        float product = TileA[localId.y][k] * TileB[k][localId.x];
+        float weight = ModelWeights[(localId.y * TILE_SIZE + k) % 64];
+        float product = TileA[localId.y][k] * TileB[k][localId.x] * weight;
         fp32Accumulation += product;
         fp16Accumulation += min16float(product);
     }

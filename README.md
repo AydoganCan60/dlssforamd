@@ -39,7 +39,7 @@ Deneysel DirectCompute neural-engine yolunu etkinleştirmek için:
 DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
 ```
 
-`shaders/matrix_mul.hlsl` dosyasını `version.dll` ile birlikte aynı dizin yapısında tutun. Motor shader'ı çalışma anında `d3dcompiler_47.dll` ile `cs_5_1` olarak derler ve sonucu `dlss_fsr_proxy.log` dosyasına yazar. Bu çekirdek açık model ağırlıkları bulunmadığından DLSS 5 ağını yeniden üretmez; WMMA kullanmayan tiled FP16/FP32 compute altyapısı ve G-buffer bağlantısı sağlar.
+`shaders/matrix_mul.hlsl` ile `models/espcn_x3.{weights,graph.json}` dosyalarını `version.dll` ile birlikte aynı dizin yapısında tutun. Motor shader'ı çalışma anında `d3dcompiler_47.dll` ile `cs_5_1` olarak derler ve ONNX Model Zoo ESPCN ağırlıklarını StructuredBuffer olarak yükler. `DLSS_FOR_AMD_TILE=8`, `16` (varsayılan) veya `32` ile compute tile seçilebilir. Sonuçlar `dlss_fsr_proxy.log` dosyasına yazılır. Preview çekirdeği graph düğümlerinin tamamını henüz yürütmez ve DLSS 5 ağını yeniden üretmez; açık weights/graph, WMMA kullanmayan tiled FP16/FP32 compute altyapısı ve G-buffer bağlantısını doğrular.
 
 Proton logları ve oyun yedekleriyle test edin. Anti-cheat kullanan çevrimiçi oyunlarda DLL enjeksiyonu kuralları ihlal edebilir; bu projeyi kullanmayın.
 
@@ -67,7 +67,7 @@ Experimental DirectCompute path:
 DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
 ```
 
-Keep `shaders/matrix_mul.hlsl` beside the DLL using the same directory layout. It is compiled at runtime through `d3dcompiler_47.dll` as `cs_5_1`, with status written to `dlss_fsr_proxy.log`. This kernel does not reproduce the proprietary DLSS 5 network without open model weights; it provides a non-WMMA tiled FP16/FP32 compute foundation and G-buffer binding path.
+Keep `shaders/matrix_mul.hlsl` and `models/espcn_x3.{weights,graph.json}` beside the DLL using the same directory layout. The shader is compiled at runtime through `d3dcompiler_47.dll` as `cs_5_1`, and ONNX Model Zoo ESPCN weights are loaded as a StructuredBuffer. Select `DLSS_FOR_AMD_TILE=8`, `16` (default), or `32`. Status is written to `dlss_fsr_proxy.log`. The preview does not execute every graph node or reproduce the proprietary DLSS 5 network; it validates open weights/graph transport, a non-WMMA tiled FP16/FP32 compute foundation, and G-buffer binding.
 
 Test with backups and Proton logging enabled. Do not use DLL injection with anti-cheat protected online games.
 

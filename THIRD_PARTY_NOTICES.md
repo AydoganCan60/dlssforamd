@@ -19,6 +19,10 @@ FidelityFX SDK source components are generally distributed under the MIT License
 
 Source and current license files: https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK
 
+## ONNX Model Zoo Super Resolution (ESPCN)
+
+The preview weights and graph metadata in `models/` are derived from `onnxmodelzoo/super-resolution-10`, an ESPCN model distributed under the Apache License 2.0. Copyright belongs to the model's respective authors and contributors. A copy of the Apache License 2.0 is available at https://www.apache.org/licenses/LICENSE-2.0. The original model source is https://huggingface.co/onnxmodelzoo/super-resolution-10.
+
 ## NVIDIA NGX headers
 
 The NVIDIA NGX SDK headers are not redistributed by this project. They are required only to compile against the exact NGX ABI and remain subject to NVIDIA's applicable SDK license. Obtain them from NVIDIA and review those terms before building or distributing binaries.

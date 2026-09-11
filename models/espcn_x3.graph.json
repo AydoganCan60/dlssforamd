@@ -1,0 +1,227 @@
+{
+  "format": "dlssforamd.graph.v1",
+  "source": "external/super-resolution-10.onnx",
+  "opset": [
+    10
+  ],
+  "inputs": [
+    "input",
+    "conv1.weight",
+    "conv1.bias",
+    "conv2.weight",
+    "conv2.bias",
+    "conv3.weight",
+    "conv3.bias",
+    "conv4.weight",
+    "conv4.bias"
+  ],
+  "outputs": [
+    "output"
+  ],
+  "nodes": [
+    {
+      "name": "",
+      "op": "Conv",
+      "inputs": [
+        "input",
+        "conv1.weight",
+        "conv1.bias"
+      ],
+      "outputs": [
+        "9"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Relu",
+      "inputs": [
+        "9"
+      ],
+      "outputs": [
+        "10"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Conv",
+      "inputs": [
+        "10",
+        "conv2.weight",
+        "conv2.bias"
+      ],
+      "outputs": [
+        "11"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Relu",
+      "inputs": [
+        "11"
+      ],
+      "outputs": [
+        "12"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Conv",
+      "inputs": [
+        "12",
+        "conv3.weight",
+        "conv3.bias"
+      ],
+      "outputs": [
+        "13"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Relu",
+      "inputs": [
+        "13"
+      ],
+      "outputs": [
+        "14"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Conv",
+      "inputs": [
+        "14",
+        "conv4.weight",
+        "conv4.bias"
+      ],
+      "outputs": [
+        "15"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Constant",
+      "inputs": [],
+      "outputs": [
+        "16"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Reshape",
+      "inputs": [
+        "15",
+        "16"
+      ],
+      "outputs": [
+        "17"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Transpose",
+      "inputs": [
+        "17"
+      ],
+      "outputs": [
+        "18"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Constant",
+      "inputs": [],
+      "outputs": [
+        "19"
+      ]
+    },
+    {
+      "name": "",
+      "op": "Reshape",
+      "inputs": [
+        "18",
+        "19"
+      ],
+      "outputs": [
+        "output"
+      ]
+    }
+  ],
+  "tensors": [
+    {
+      "name": "conv1.bias",
+      "shape": [
+        64
+      ],
+      "offset": 0,
+      "count": 64
+    },
+    {
+      "name": "conv1.weight",
+      "shape": [
+        64,
+        1,
+        5,
+        5
+      ],
+      "offset": 64,
+      "count": 1600
+    },
+    {
+      "name": "conv2.bias",
+      "shape": [
+        64
+      ],
+      "offset": 1664,
+      "count": 64
+    },
+    {
+      "name": "conv2.weight",
+      "shape": [
+        64,
+        64,
+        3,
+        3
+      ],
+      "offset": 1728,
+      "count": 36864
+    },
+    {
+      "name": "conv3.bias",
+      "shape": [
+        32
+      ],
+      "offset": 38592,
+      "count": 32
+    },
+    {
+      "name": "conv3.weight",
+      "shape": [
+        32,
+        64,
+        3,
+        3
+      ],
+      "offset": 38624,
+      "count": 18432
+    },
+    {
+      "name": "conv4.bias",
+      "shape": [
+        9
+      ],
+      "offset": 57056,
+      "count": 9
+    },
+    {
+      "name": "conv4.weight",
+      "shape": [
+        9,
+        32,
+        3,
+        3
+      ],
+      "offset": 57065,
+      "count": 2592
+    }
+  ]
+}

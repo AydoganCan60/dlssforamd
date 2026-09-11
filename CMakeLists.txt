@@ -1,6 +1,6 @@
 # Copyright (c) 2026 AydoganCan60- MIT License
 cmake_minimum_required(VERSION 3.21)
-project(dlssforamd VERSION 0.1.0 LANGUAGES C CXX)
+project(dlssforamd VERSION 0.2.0 LANGUAGES C CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "This project targets Windows. Configure with x86_64-w64-mingw32-cmake or a MinGW toolchain file.")
@@ -53,8 +53,12 @@ endif()
 
 add_custom_command(TARGET version POST_BUILD
     COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:version>/shaders"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:version>/models"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_SOURCE_DIR}/shaders/matrix_mul.hlsl" "$<TARGET_FILE_DIR:version>/shaders/matrix_mul.hlsl"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_SOURCE_DIR}/models/espcn_x3.weights" "$<TARGET_FILE_DIR:version>/models/espcn_x3.weights"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_SOURCE_DIR}/models/espcn_x3.graph.json" "$<TARGET_FILE_DIR:version>/models/espcn_x3.graph.json"
 )
 
 install(TARGETS version RUNTIME DESTINATION . LIBRARY DESTINATION .)
 install(FILES shaders/matrix_mul.hlsl DESTINATION shaders)
+install(FILES models/espcn_x3.weights models/espcn_x3.graph.json DESTINATION models)
