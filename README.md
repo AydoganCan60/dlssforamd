@@ -33,6 +33,14 @@ cmake --build build --parallel
 WINEDLLOVERRIDES="version=n,b" %command%
 ```
 
+Deneysel DirectCompute neural-engine yolunu etkinleştirmek için:
+
+```text
+DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
+```
+
+`shaders/matrix_mul.hlsl` dosyasını `version.dll` ile birlikte aynı dizin yapısında tutun. Motor shader'ı çalışma anında `d3dcompiler_47.dll` ile `cs_5_1` olarak derler ve sonucu `dlss_fsr_proxy.log` dosyasına yazar. Bu çekirdek açık model ağırlıkları bulunmadığından DLSS 5 ağını yeniden üretmez; WMMA kullanmayan tiled FP16/FP32 compute altyapısı ve G-buffer bağlantısı sağlar.
+
 Proton logları ve oyun yedekleriyle test edin. Anti-cheat kullanan çevrimiçi oyunlarda DLL enjeksiyonu kuralları ihlal edebilir; bu projeyi kullanmayın.
 
 ## English
@@ -52,6 +60,14 @@ Steam launch option:
 ```text
 WINEDLLOVERRIDES="version=n,b" %command%
 ```
+
+Experimental DirectCompute path:
+
+```text
+DLSS_FOR_AMD_NEURAL=1 WINEDLLOVERRIDES="version=n,b" %command%
+```
+
+Keep `shaders/matrix_mul.hlsl` beside the DLL using the same directory layout. It is compiled at runtime through `d3dcompiler_47.dll` as `cs_5_1`, with status written to `dlss_fsr_proxy.log`. This kernel does not reproduce the proprietary DLSS 5 network without open model weights; it provides a non-WMMA tiled FP16/FP32 compute foundation and G-buffer binding path.
 
 Test with backups and Proton logging enabled. Do not use DLL injection with anti-cheat protected online games.
 

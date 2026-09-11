@@ -12,6 +12,7 @@
 #include <ffx_upscale.h>
 #include "detours_mingw_compat.h"
 #include "logger.h"
+#include "neural_engine.h"
 #include <detours.h>
 
 struct NVSDK_NGX_Handle {
@@ -42,10 +43,13 @@ FfxCreate ffxCreate = nullptr;
 FfxDestroy ffxDestroy = nullptr;
 FfxDispatch ffxDispatch = nullptr;
 HMODULE fidelityFx = nullptr;
+HMODULE proxyModule = nullptr;
 ffxContext upscaleContext{};
+NeuralEngine neuralEngine;
 SRWLOCK stateLock = SRWLOCK_INIT;
 std::atomic_bool hooksInstalled{false};
 std::atomic_bool contextReady{false};
+std::atomic_bool neuralEnabled{false};
 NVSDK_NGX_Handle syntheticHandles[16]{};
 
 class ScopedExclusiveLock {
@@ -112,10 +116,14 @@ bool ensureContext(const NVSDK_NGX_Parameter* parameters) {
 NVSDK_NGX_Result NVSDK_CONV hookedInit(unsigned long long appId, const wchar_t* path, ID3D12Device* device,
                                        const NVSDK_NGX_FeatureCommonInfo* info, NVSDK_NGX_Version version) {
     const bool available = loadFidelityFx();
+    char neuralSetting[2]{};
+    const bool requested = GetEnvironmentVariableA("DLSS_FOR_AMD_NEURAL", neuralSetting, sizeof(neuralSetting)) == 1 && neuralSetting[0] == '1';
+    neuralEnabled.store(requested && neuralEngine.initialize(device, proxyModule));
     const NVSDK_NGX_Result result = available ? NVSDK_NGX_Result_Success :
         (realInit ? realInit(appId, path, device, info, version) : NVSDK_NGX_Result_FAIL_FeatureNotSupported);
-    logging::write("NVSDK_NGX_D3D12_Init appId=%llu path=%p device=%p info=%p version=0x%x ffx=%u result=0x%x",
-                   appId, path, device, info, static_cast<unsigned int>(version), available, static_cast<unsigned int>(result));
+    logging::write("NVSDK_NGX_D3D12_Init appId=%llu path=%p device=%p info=%p version=0x%x ffx=%u neuralRequested=%u neuralReady=%u result=0x%x",
+                   appId, path, device, info, static_cast<unsigned int>(version), available, requested, neuralEnabled.load(),
+                   static_cast<unsigned int>(result));
     return result;
 }
 
@@ -181,6 +189,18 @@ NVSDK_NGX_Result NVSDK_CONV hookedEvaluate(ID3D12GraphicsCommandList* commandLis
     getParameter(parameters, "Jitter.Offset.X", &jitterX); getParameter(parameters, "Jitter.Offset.Y", &jitterY);
     getParameter(parameters, "MV.Scale.X", &mvScaleX); getParameter(parameters, "MV.Scale.Y", &mvScaleY);
     getParameter(parameters, "FrameTimeDeltaInMsec", &frameTime);
+    if (!outputWidth) outputWidth = width;
+    if (!outputHeight) outputHeight = height;
+
+    if (neuralEnabled.load()) {
+        const NeuralEngineInputs inputs{color, depth, motionVectors, output, width, height, outputWidth, outputHeight};
+        if (neuralEngine.dispatch(commandList, inputs)) {
+            logging::write("NVSDK_NGX_D3D12_EvaluateFeature routed=NeuralEngine handle=%p result=0x%x", handle,
+                           static_cast<unsigned int>(NVSDK_NGX_Result_Success));
+            return NVSDK_NGX_Result_Success;
+        }
+        logging::write("NVSDK_NGX_D3D12_EvaluateFeature NeuralEngine dispatch failed; falling back to FidelityFX");
+    }
 
     ffxDispatchDescUpscale dispatch{};
     dispatch.header.type = FFX_API_DISPATCH_DESC_TYPE_UPSCALE;
@@ -259,6 +279,7 @@ DWORD WINAPI initialize(LPVOID) {
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID) {
     if (reason == DLL_PROCESS_ATTACH) {
         DisableThreadLibraryCalls(instance);
+        proxyModule = instance;
         logging::initialize(instance);
         if (HANDLE thread = CreateThread(nullptr, 0, initialize, nullptr, 0, nullptr)) CloseHandle(thread);
     }

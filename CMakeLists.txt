@@ -34,9 +34,10 @@ if(MINGW)
     target_compile_options(detours PRIVATE -include "${CMAKE_SOURCE_DIR}/src/detours_mingw_compat.h")
 endif()
 
-add_library(version SHARED src/main.cpp src/logger.cpp src/version_proxy.cpp)
+add_library(version SHARED src/main.cpp src/logger.cpp src/neural_engine.cpp src/version_proxy.cpp)
 set_target_properties(version PROPERTIES PREFIX "" OUTPUT_NAME "version")
 target_include_directories(version PRIVATE
+    "${CMAKE_SOURCE_DIR}/include"
     "${NGX_SDK_DIR}/include"
     "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/api/include"
     "${FIDELITYFX_SDK_DIR}/Kits/FidelityFX/upscalers/include"
@@ -50,4 +51,10 @@ else()
     target_link_libraries(version PRIVATE detours d3d12 dxgi)
 endif()
 
+add_custom_command(TARGET version POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:version>/shaders"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${CMAKE_SOURCE_DIR}/shaders/matrix_mul.hlsl" "$<TARGET_FILE_DIR:version>/shaders/matrix_mul.hlsl"
+)
+
 install(TARGETS version RUNTIME DESTINATION . LIBRARY DESTINATION .)
+install(FILES shaders/matrix_mul.hlsl DESTINATION shaders)
