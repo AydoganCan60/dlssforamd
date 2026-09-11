@@ -1,0 +1,60 @@
+<!-- Copyright (c) 2026 AydoganCan60- MIT License -->
+# dlssforamd
+
+## Türkçe
+
+`dlssforamd`, Windows/Wine altında `version.dll` olarak yüklenen deneysel bir D3D12 proxy'sidir. Microsoft Detours 4.0.1 ile yüklü NGX modülündeki D3D12 init/evaluate girişlerini yakalar ve NGX kaynak parametrelerini FidelityFX Upscaler API tanımlarına dönüştürmeyi dener.
+
+### Önemli durum
+
+Bu proje tamamlanmış, evrensel bir DLSS→FSR 3 çeviricisi değildir. NGX ABI'si oyun ve SDK sürümüne göre değişebilir. DLSS Frame Generation, capability-parameter emülasyonu, feature create/release, kaynak durum geçişleri, descriptor yönetimi, UI ayrıştırma ve optik akış henüz uygulanmamıştır. Kod yalnızca NGX'in zaten oluşturabildiği bir feature'ın `EvaluateFeature` yolunu deneysel olarak yönlendirir; AMD kartında tam destek spoofing için ek NGX uyumluluk katmanı gerekir. Hatalı kaynak formatı/durumu GPU resetine neden olabilir.
+
+### Bağımlılıklar
+
+- MinGW-w64 x86_64 toolchain, CMake 3.21+
+- Microsoft Detours **4.0.1** (`external/Detours`)
+- AMD FidelityFX SDK (`external/FidelityFX-SDK`)
+- Lisanslı NVIDIA NGX SDK başlıkları (`-DNGX_SDK_DIR=/yol/NGX`)
+- Çalışma anında FidelityFX SDK ile gelen `amd_fidelityfx_upscaler_dx12.dll` (eski SDK için `amd_fidelityfx_dx12.dll`)
+
+```bash
+git clone --branch v4.0.1 https://github.com/microsoft/Detours.git external/Detours
+git clone https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK.git external/FidelityFX-SDK
+cmake -S . -B build -DCMAKE_SYSTEM_NAME=Windows \
+  -DCMAKE_C_COMPILER=x86_64-w64-mingw32-gcc \
+  -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-g++ \
+  -DNGX_SDK_DIR="$HOME/sdk/NGX"
+cmake --build build --parallel
+```
+
+`version.dll` ve uygun FidelityFX runtime DLL'sini oyunun `.exe` dosyasının yanına kopyalayın. Steam başlatma seçeneği:
+
+```text
+WINEDLLOVERRIDES="version=n,b" %command%
+```
+
+Proton logları ve oyun yedekleriyle test edin. Anti-cheat kullanan çevrimiçi oyunlarda DLL enjeksiyonu kuralları ihlal edebilir; bu projeyi kullanmayın.
+
+## English
+
+`dlssforamd` is an experimental D3D12 proxy loaded as `version.dll` on Windows/Wine. It uses Microsoft Detours 4.0.1 to intercept D3D12 NGX init/evaluate entry points and attempts to translate NGX resource parameters into FidelityFX Upscaler API descriptors.
+
+### Important status
+
+This is not a finished universal DLSS-to-FSR 3 translator. NGX ABIs vary across game/SDK versions. DLSS Frame Generation, capability-parameter emulation, feature create/release, resource transitions, descriptor management, UI separation, and optical flow are not implemented. The current code only experiments with redirecting `EvaluateFeature` for a feature NGX was already able to create; full support spoofing on AMD hardware requires an additional NGX compatibility layer. Incorrect resource formats/states can trigger a GPU reset.
+
+### Dependencies and build
+
+Install CMake 3.21+ and the MinGW-w64 x86_64 toolchain. Clone Detours 4.0.1 and FidelityFX as shown in the Turkish section, obtain the NGX SDK headers under their applicable NVIDIA license, then run the same CMake commands. Copy `version.dll` and the matching FidelityFX runtime DLL beside the game executable.
+
+Steam launch option:
+
+```text
+WINEDLLOVERRIDES="version=n,b" %command%
+```
+
+Test with backups and Proton logging enabled. Do not use DLL injection with anti-cheat protected online games.
+
+## License
+
+Project-owned code is MIT licensed. Third-party dependencies and NGX headers retain their respective terms; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
