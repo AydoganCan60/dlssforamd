@@ -13,6 +13,7 @@
 #include "detours_mingw_compat.h"
 #include "logger.h"
 #include "neural_engine.h"
+#include "ngx_parameters.h"
 #include <detours.h>
 
 struct NVSDK_NGX_Handle {
@@ -28,6 +29,9 @@ using NgxCreate = NVSDK_NGX_Result (NVSDK_CONV*)(ID3D12GraphicsCommandList*, NVS
 using NgxEvaluate = NVSDK_NGX_Result (NVSDK_CONV*)(ID3D12GraphicsCommandList*, const NVSDK_NGX_Handle*, const NVSDK_NGX_Parameter*, PFN_NVSDK_NGX_ProgressCallback);
 using NgxRelease = NVSDK_NGX_Result (NVSDK_CONV*)(NVSDK_NGX_Handle*);
 using NgxShutdown = NVSDK_NGX_Result (NVSDK_CONV*)(ID3D12Device*);
+using LoadLibraryAFunction = HMODULE (WINAPI*)(LPCSTR);
+using LoadLibraryWFunction = HMODULE (WINAPI*)(LPCWSTR);
+using GetProcAddressFunction = FARPROC (WINAPI*)(HMODULE, LPCSTR);
 using FfxCreate = ffxReturnCode_t (*)(ffxContext*, ffxCreateContextDescHeader*, const ffxAllocationCallbacks*);
 using FfxDestroy = ffxReturnCode_t (*)(ffxContext*, const ffxAllocationCallbacks*);
 using FfxDispatch = ffxReturnCode_t (*)(ffxContext*, const ffxDispatchDescHeader*);
@@ -39,6 +43,9 @@ NgxCreate realCreate = nullptr;
 NgxEvaluate realEvaluate = nullptr;
 NgxRelease realRelease = nullptr;
 NgxShutdown realShutdown = nullptr;
+LoadLibraryAFunction realLoadLibraryA = LoadLibraryA;
+LoadLibraryWFunction realLoadLibraryW = LoadLibraryW;
+GetProcAddressFunction realGetProcAddress = GetProcAddress;
 FfxCreate ffxCreate = nullptr;
 FfxDestroy ffxDestroy = nullptr;
 FfxDispatch ffxDispatch = nullptr;
@@ -119,7 +126,7 @@ NVSDK_NGX_Result NVSDK_CONV hookedInit(unsigned long long appId, const wchar_t* 
     char neuralSetting[2]{};
     const bool requested = GetEnvironmentVariableA("DLSS_FOR_AMD_NEURAL", neuralSetting, sizeof(neuralSetting)) == 1 && neuralSetting[0] == '1';
     neuralEnabled.store(requested && neuralEngine.initialize(device, proxyModule));
-    const NVSDK_NGX_Result result = available ? NVSDK_NGX_Result_Success :
+    const NVSDK_NGX_Result result = available || neuralEnabled.load() ? NVSDK_NGX_Result_Success :
         (realInit ? realInit(appId, path, device, info, version) : NVSDK_NGX_Result_FAIL_FeatureNotSupported);
     logging::write("NVSDK_NGX_D3D12_Init appId=%llu path=%p device=%p info=%p version=0x%x ffx=%u neuralRequested=%u neuralReady=%u result=0x%x",
                    appId, path, device, info, static_cast<unsigned int>(version), available, requested, neuralEnabled.load(),
@@ -128,7 +135,11 @@ NVSDK_NGX_Result NVSDK_CONV hookedInit(unsigned long long appId, const wchar_t* 
 }
 
 NVSDK_NGX_Result NVSDK_CONV hookedGetCapabilities(NVSDK_NGX_Parameter** output) {
-    const NVSDK_NGX_Result original = realGetCapabilities ? realGetCapabilities(output) : NVSDK_NGX_Result_FAIL_NotInitialized;
+    NVSDK_NGX_Result original = realGetCapabilities ? realGetCapabilities(output) : NVSDK_NGX_Result_FAIL_NotInitialized;
+    if (original != NVSDK_NGX_Result_Success && output) {
+        *output = createNgxParameters(true);
+        if (*output) original = NVSDK_NGX_Result_Success;
+    }
     if (original == NVSDK_NGX_Result_Success && output && *output) {
         (*output)->Set(NVSDK_NGX_Parameter_SuperSampling_Available, 1U);
         (*output)->Set(NVSDK_NGX_Parameter_SuperSampling_FeatureInitResult, static_cast<int>(NVSDK_NGX_Result_Success));
@@ -236,6 +247,105 @@ NVSDK_NGX_Result NVSDK_CONV hookedShutdown(ID3D12Device* device) {
     return result;
 }
 
+NVSDK_NGX_Result NVSDK_CONV fallbackAllocateParameters(NVSDK_NGX_Parameter** output) {
+    if (!output) return NVSDK_NGX_Result_FAIL_InvalidParameter;
+    *output = createNgxParameters(false);
+    const NVSDK_NGX_Result result = *output ? NVSDK_NGX_Result_Success : NVSDK_NGX_Result_FAIL_OutOfDate;
+    logging::write("virtual NVSDK_NGX_D3D12_AllocateParameters output=%p parameters=%p result=0x%x", output, *output,
+                   static_cast<unsigned int>(result));
+    return result;
+}
+
+NVSDK_NGX_Result NVSDK_CONV fallbackDestroyParameters(NVSDK_NGX_Parameter* parameters) {
+    if (!isEmulatedNgxParameters(parameters)) return NVSDK_NGX_Result_FAIL_InvalidParameter;
+    destroyNgxParameters(parameters);
+    logging::write("virtual NVSDK_NGX_D3D12_DestroyParameters parameters=%p result=0x%x", parameters,
+                   static_cast<unsigned int>(NVSDK_NGX_Result_Success));
+    return NVSDK_NGX_Result_Success;
+}
+
+std::int32_t WINAPI fallbackSlIsFeatureSupported(std::uint32_t feature, const void* adapterInfo) {
+    logging::write("virtual slIsFeatureSupported feature=%u adapterInfo=%p result=0", feature, adapterInfo);
+    return 0;
+}
+
+bool requestedVirtualization() {
+    char setting[2]{};
+    return GetEnvironmentVariableA("DLSS_FOR_AMD_NEURAL", setting, sizeof(setting)) == 1 && setting[0] == '1';
+}
+
+bool trackedModuleName(const char* path) {
+    if (!path) return false;
+    const char* name = std::strrchr(path, '\\');
+    name = name ? name + 1 : path;
+    return _stricmp(name, "sl.interposer.dll") == 0 || _stricmp(name, "sl.common.dll") == 0 ||
+        _stricmp(name, "sl.dlss.dll") == 0 || _stricmp(name, "nvngx.dll") == 0 || _stricmp(name, "nvngx_dlss.dll") == 0;
+}
+
+bool virtualModuleName(const char* path) {
+    if (!path || !requestedVirtualization()) return false;
+    const char* name = std::strrchr(path, '\\');
+    name = name ? name + 1 : path;
+    return _stricmp(name, "nvngx.dll") == 0 || _stricmp(name, "nvngx_dlss.dll") == 0 || _stricmp(name, "sl.dlss.dll") == 0;
+}
+
+HMODULE retainProxyModule() {
+    HMODULE retained = nullptr;
+    GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS,
+                       reinterpret_cast<LPCWSTR>(reinterpret_cast<const void*>(&retainProxyModule)), &retained);
+    return retained;
+}
+
+HMODULE WINAPI hookedLoadLibraryA(LPCSTR path) {
+    HMODULE module = realLoadLibraryA(path);
+    if (!module && virtualModuleName(path)) module = retainProxyModule();
+    if (trackedModuleName(path)) logging::write("LoadLibraryA path=%s result=%p virtual=%u", path, module, module == proxyModule);
+    return module;
+}
+
+HMODULE WINAPI hookedLoadLibraryW(LPCWSTR path) {
+    HMODULE module = realLoadLibraryW(path);
+    char narrow[MAX_PATH]{};
+    if (path) WideCharToMultiByte(CP_UTF8, 0, path, -1, narrow, MAX_PATH, nullptr, nullptr);
+    if (!module && virtualModuleName(narrow)) module = retainProxyModule();
+    if (trackedModuleName(narrow)) logging::write("LoadLibraryW path=%ls result=%p virtual=%u", path, module, module == proxyModule);
+    return module;
+}
+
+FARPROC WINAPI hookedGetProcAddress(HMODULE module, LPCSTR name) {
+    if (name && requestedVirtualization()) {
+        FARPROC replacement = nullptr;
+        if (module == proxyModule) {
+            if (std::strcmp(name, "NVSDK_NGX_D3D12_Init") == 0) replacement = reinterpret_cast<FARPROC>(hookedInit);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_GetCapabilityParameters") == 0) replacement = reinterpret_cast<FARPROC>(hookedGetCapabilities);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_AllocateParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackAllocateParameters);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_DestroyParameters") == 0) replacement = reinterpret_cast<FARPROC>(fallbackDestroyParameters);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_CreateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedCreate);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_EvaluateFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedEvaluate);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_ReleaseFeature") == 0) replacement = reinterpret_cast<FARPROC>(hookedRelease);
+            else if (std::strcmp(name, "NVSDK_NGX_D3D12_Shutdown1") == 0) replacement = reinterpret_cast<FARPROC>(hookedShutdown);
+        }
+        if (std::strcmp(name, "slIsFeatureSupported") == 0) replacement = reinterpret_cast<FARPROC>(fallbackSlIsFeatureSupported);
+        if (replacement) {
+            logging::write("GetProcAddress module=%p name=%s replacement=%p", module, name, reinterpret_cast<void*>(replacement));
+            return replacement;
+        }
+    }
+    return realGetProcAddress(module, name);
+}
+
+bool installLoaderHooks() {
+    DetourTransactionBegin();
+    DetourUpdateThread(GetCurrentThread());
+    DetourAttach(reinterpret_cast<PVOID*>(&realLoadLibraryA), reinterpret_cast<PVOID>(hookedLoadLibraryA));
+    DetourAttach(reinterpret_cast<PVOID*>(&realLoadLibraryW), reinterpret_cast<PVOID>(hookedLoadLibraryW));
+    DetourAttach(reinterpret_cast<PVOID*>(&realGetProcAddress), reinterpret_cast<PVOID>(hookedGetProcAddress));
+    const LONG result = DetourTransactionCommit();
+    logging::write("loader hooks LoadLibraryA=%p LoadLibraryW=%p GetProcAddress=%p result=%ld", reinterpret_cast<void*>(realLoadLibraryA),
+                   reinterpret_cast<void*>(realLoadLibraryW), reinterpret_cast<void*>(realGetProcAddress), result);
+    return result == NO_ERROR;
+}
+
 void hookNgx(HMODULE module) {
     if (!module || hooksInstalled.exchange(true)) return;
     realInit = reinterpret_cast<NgxInit>(GetProcAddress(module, "NVSDK_NGX_D3D12_Init"));
@@ -264,7 +374,8 @@ void hookNgx(HMODULE module) {
 }
 
 DWORD WINAPI initialize(LPVOID) {
-    logging::write("NGX discovery started");
+    installLoaderHooks();
+    logging::write("NGX discovery started virtualization=%u", requestedVirtualization());
     for (unsigned int attempt = 0; attempt < 600 && !hooksInstalled.load(); ++attempt) {
         HMODULE ngx = GetModuleHandleW(L"nvngx.dll");
         if (!ngx) ngx = GetModuleHandleW(L"nvngx_dlss.dll");

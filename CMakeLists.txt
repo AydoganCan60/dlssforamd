@@ -34,7 +34,7 @@ if(MINGW)
     target_compile_options(detours PRIVATE -include "${CMAKE_SOURCE_DIR}/src/detours_mingw_compat.h")
 endif()
 
-add_library(version SHARED src/main.cpp src/logger.cpp src/neural_engine.cpp src/version_proxy.cpp)
+add_library(version SHARED src/main.cpp src/logger.cpp src/neural_engine.cpp src/ngx_parameters.cpp src/version_proxy.cpp)
 set_target_properties(version PROPERTIES PREFIX "" OUTPUT_NAME "version")
 target_include_directories(version PRIVATE
     "${CMAKE_SOURCE_DIR}/include"
